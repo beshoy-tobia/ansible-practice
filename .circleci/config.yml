@@ -10,12 +10,13 @@ jobs:
           name: "Create Cloudformation Stack"
           command: |
             aws cloudformation create-stack \
+              --stack-name ansible-test
               --body-file ~/ansible-infra/test-instance.yml \
               --parameters ~/ansible-infra/infra-params.json \
               --region us-east-1
 
 
 workflows:
-  say-hello-workflow:
+  infrastructure-workflow:
     jobs:
       - create-infrastructure
