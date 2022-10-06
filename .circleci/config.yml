@@ -1,18 +1,21 @@
 version: 2.1
 
+orbs:
+  aws-cli: circleci/aws-cli@2.0.3
+
 jobs:
   create-infrastructure:
     docker:
-      - image: amazon/awc-cli
+      - image: amazon/aws-cli
     steps:
       - checkout
       - run:
           name: "Create Cloudformation Stack"
           command: |
             aws cloudformation create-stack \
-              --stack-name ansible-test
-              --body-file test-instance.yml \
-              --parameters infra-params.json \
+              --stack-name ansible-test-${CIRCLE_WORKFLOW_ID:0:5} \
+              --template-body file://test-instance.yml \
+              --parameters file://infra-params.json \
               --region us-east-1
 
 
