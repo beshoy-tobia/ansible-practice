@@ -11,8 +11,8 @@ jobs:
           command: |
             aws cloudformation create-stack \
               --stack-name ansible-test
-              --body-file ~/ansible-infra/test-instance.yml \
-              --parameters ~/ansible-infra/infra-params.json \
+              --body-file test-instance.yml \
+              --parameters infra-params.json \
               --region us-east-1
 
 

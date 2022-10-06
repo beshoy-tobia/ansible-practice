@@ -1,0 +1,10 @@
+[
+    {
+        "ParameterKey": "EnvironmentName",
+        "ParameterValue": "UdacityProject"
+    },
+    {
+        "ParameterKey": "VpcId",
+        "ParameterValue": "vpc-09500079c9ae41149"
+    }
+]
