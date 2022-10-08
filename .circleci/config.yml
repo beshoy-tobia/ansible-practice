@@ -18,8 +18,58 @@ jobs:
               --parameters file://infra-params.json \
               --region us-east-1
 
+  create-inventory-file:
+    docker:
+      - image: amazon/aws-cli
+    steps:
+      - checkout
+      - run:
+          name: Install tar utility
+          command: |
+            yum install -y tar gzip
+      - run:
+          name: "wait for stack creation complete"
+          command: |
+            sleep 20s
+      - run: echo "[all]" > ~/inventory.txt
+      - run:
+          name: "save created instance ip address"
+          command: |
+            aws ec2 describe-instances --query 'Reservations[*].Instances[*].PublicIpAddress' --filters "Name=tag:Project,Values=udacity" --output text >> ~/inventory.txt
+      - persist_to_workspace:
+          root: ~/
+          paths:
+            - "inventory.txt"
+
+  configure-infrastructure:
+    docker:
+      - image: cimg/python:3.10.7
+    steps:
+      - checkout
+      - attach_workspace:
+          at: ~/
+      - add_ssh_keys:
+          fingerprints: ["65:22:a5:f4:5d:52:67:44:55:1c:92:64:9d:36:6d:a8"]
+      - run: sudo apt install python3 -y
+      - run:
+          name: "install ansible"
+          command: |
+            sudo apt-add-repository ppa:ansible/ansible
+            sudo apt update
+            sudo apt install ansible
+      - run:
+          name: run playbook and configure the server
+          command: |
+            ansible-playbook -i ~/inventory.txt main-remote.yml
 
 workflows:
   infrastructure-workflow:
     jobs:
       - create-infrastructure
+      - create-inventory-file:
+          requires:
+            - create-infrastructure
+      - configure-infrastructure:
+          requires:
+            - create-inventory-file
+
