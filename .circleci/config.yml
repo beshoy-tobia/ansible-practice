@@ -13,21 +13,29 @@ commands:
             aws cloudformation delete-stack --stack-name ansible-test-${CIRCLE_WORKFLOW_ID:0:5}
 
 jobs:
-  create-infrastructure:
+  create-and-deploy-front-end:
     docker:
       - image: amazon/aws-cli
     steps:
       - checkout
       - run:
-          name: "Create Cloudformation Stack"
+          name: "Execute Cloudformation Template that create bucket"
           command: |
             aws cloudformation create-stack \
-              --stack-name ansible-test-${CIRCLE_WORKFLOW_ID:0:5} \
-              --template-body file://test-instance.yml \
-              --parameters file://infra-params.json \
+              --stack-name stack-create-bucket-${CIRCLE_WORKFLOW_ID:0:5} \
+              --template-body file://bucket.yml \
               --region us-east-1
+      - run:
+          name: "wait for stack creation complete"
+          command: |
+            sleep 40s
+      - run:
+          name: "copy the index file to s3 bucket"
+          command: |
+            aws s3 cp index.html s3://bucket-ward-2
+            aws s3 cp error.html s3://bucket-ward-2
 
-  create-inventory-file:
+  get-last-deployment-id:
     docker:
       - image: amazon/aws-cli
     steps:
@@ -37,80 +45,51 @@ jobs:
           command: |
             yum install -y tar gzip
       - run:
-          name: "wait for stack creation complete"
+          name: "Fetch and save the old pipeline ID (bucket name) responsible for the last release."
           command: |
-            sleep 20s
-      - run: echo "[all]" > ~/inventory.txt
-      - run:
-          name: "save created instance ip address"
-          command: |
-            aws ec2 describe-instances --query 'Reservations[*].Instances[*].PublicIpAddress' --filters "Name=tag:Project,Values=udacity" --output text >> ~/inventory.txt
+            aws cloudformation list-exports --query "Exports[?Name==\`PipelineID\`].Value" --no-paginate --output text > ~/textfile.txt
       - persist_to_workspace:
           root: ~/
           paths:
-            - "inventory.txt"
+            - "textfile.txt"
 
-  configure-infrastructure:
-    docker:
-      - image: cimg/python:3.10.7
-    steps:
-      - checkout
-      - attach_workspace:
-          at: ~/
-      - add_ssh_keys:
-          fingerprints: ["65:22:a5:f4:5d:52:67:44:55:1c:92:64:9d:36:6d:a8"]
-      - run: sudo apt install python3 -y
-      - run:
-          name: "install ansible"
-          command: |
-            sudo apt-add-repository ppa:ansible/ansible
-            sudo apt update
-            sudo apt install ansible
-      - run:
-          name: run playbook and configure the server
-          command: |
-            ansible-playbook -i ~/inventory.txt main-remote.yml
-
-  smoke-test:
-    docker:
-      - image: alpine:latest
-    steps:
-      - checkout
-      - run: apk add --update curl
-      - run:
-          name: "smoke test"
-          command: |
-            URL="https://blog.udacity.com/"
-            if curl -s --head ${URL}
-              then
-                return 0
-              else
-                return 1
-              fi
-
-  simulate_failure:
+  pormote-to-production:
     docker:
       - image: amazon/aws-cli
     steps:
       - checkout
       - run:
-          name: "simulate_failure"
-          command: return 1
-      - destroy-environment
+          name: "Deploy cloudfront new version"
+          command: |
+            aws cloudformation update-stack \
+              --stack-name production-distro \
+              --template-body file://cloudfront.yml \
+              --region us-east-1
 
+  cleanup-old-front-end:
+    docker:
+      - image: amazon/aws-cli
+    steps:
+      - checkout
+      - run: yum install -y tar gzip
+      - attach_workspace:
+          at: ~/
+      - run:
+          name: "Destory the previous s3 bucket"
+          command: |
+            export OldBucketID=${cat ~/textfile.txt}
+            aws s3 rm "s3://${OldBucketID}" --recursive
 
 workflows:
-  infrastructure-workflow:
+  promote-to-production-workflow:
     jobs:
-      #- smoke-test
-      - create-infrastructure
-      #- create-inventory-file:
-      #   requires:
-      #      - create-infrastructure
-      #- configure-infrastructure:
-      #    requires:
-      #      - create-inventory-file
-      - simulate_failure:
+      - create-and-deploy-front-end
+      - pormote-to-production:
           requires:
-            - create-infrastructure
+            - create-and-deploy-front-end
+      - get-last-deployment-id
+      - cleanup-old-front-end:
+          requires:
+            - pormote-to-production
+            - get-last-deployment-id
 
